@@ -10,6 +10,8 @@
             padding: 0;
             font-family: Arial, sans-serif;
             display: flex;
+	    flex-direction: column;
+	    gap: 1rem;
             justify-content: center;
             align-items: center;
             height: 100vh;
@@ -57,8 +59,19 @@
         }
 
         .card .social {
-            margin: 5px 0;
+	    width: 65%;
+	    text-align: left;
+            margin: 5px auto;
         }
+
+	.card .social .service {
+	    width: 5rem;
+	    display: inline-block;
+	}
+
+	.pgp {
+	    text-align: left;
+	}
 
         @media (prefers-color-scheme: dark) {
             body {
@@ -85,14 +98,107 @@
         <img src="profile.jpg" alt="Profile Image">
         <h1>s3i7h</h1>
         <h2>Yuichiro Smith</h2>
-        <div class="social">Twitter: <a href="https://twitter.com/s3i7h" target="_blank">@s3i7h</a></div>
-        <div class="social">GitHub: <a href="https://github.com/s3i7h" target="_blank">s3i7h</a></div>
-        <div class="social">Instagram: <a href="https://instagram.com/s3i7h" target="_blank">s3i7h</a></div>
-        <div class="social">Facebook: <a href="https://facebook.com/s3i7h" target="_blank">s3i7h</a></div>
-        <div class="social">Gravatar: <a href="https://gravatar.com/s3i7h" target="_blank">s3i7h</a></div>
+        <div class="social"><span class="service">Twitter: </span><a href="https://twitter.com/s3i7h" target="_blank">@s3i7h</a></div>
+        <div class="social"><span class="service">GitHub: </span><a href="https://github.com/s3i7h" target="_blank">s3i7h</a></div>
+        <div class="social"><span class="service">Instagram: </span><a href="https://instagram.com/s3i7h" target="_blank">s3i7h</a></div>
+        <div class="social"><span class="service">Facebook: </span><a href="https://facebook.com/s3i7h" target="_blank">s3i7h</a></div>
+        <div class="social"><span class="service">Gravatar: </span><a href="https://gravatar.com/s3i7h" target="_blank">s3i7h</a></div>
+	<div class="social"><span class="service">OpenPGP: </span><a href="./s3i7h.asc" target="_blank">s3i7h.asc</a>&nbsp;<span id="pgp-handle"></span></div>
     </div>
-    <script>
-        // Add any JavaScript here if needed
+    <div id="pgp-card"></div>
+    <script type="module">
+      import * as openpgp from "./openpgp.mjs"
+
+      // simple wrapper to create a DOM element on the fly
+      // html("a", {href: "https://google.com"}, ["Google"])
+      const html = (tag, attrs_, children_) => {
+	  if (tag == null) return new Comment("__empty__")
+	  const el = document.createElement(tag)
+	  const attrs = attrs_ != null ? attrs_ : {}
+	  const children = children_ != null ? children_ : []
+	  for (const [name, value] of Object.entries(attrs))
+	      name.substr(0,2).toLowerCase() === "on"
+	      ? el.addEventListener(name.substr(2), value)
+	      : el.setAttribute(name, value)
+	  for (const child of children)
+	      el.appendChild(typeof child === "string" ? new Text(child) : child)
+	  return el
+      }
+
+      const useState = (initial) => {
+	  let state = typeof intial === "function" ? initial() : initial
+	  return {
+	      get: () => state,
+	      set: (newState) => { state = typeof newState === "function" ? newState(state) : newState }
+	  }
+      }
+
+      // simple reactive ui implementation
+      const reactive = (root, render, initialState) => {
+	  let state = {}
+	  let el = root
+	  const updateState = (partialState) => {
+	      state = {...state, ...partialState}
+	      const dom = render(state, updateState)
+	      el.replaceWith(dom)
+	      el = dom
+	  }
+	  updateState(initialState)
+	  return { getState: () => state, getElement: () => el, updateState }
+      }
+
+      const pgpHandleState = { keyId: "", togglePgpCard: () => {} }
+      const pgpHandleRender = (state, _updateState) => html("button", {onclick: () => state.togglePgpCard()}, [
+	  state.keyId !== "" ? `info` : "..."
+      ])
+      const pgpHandle = reactive(window["pgp-handle"], pgpHandleRender, pgpHandleState)
+
+      const isCardOpen = useState(false)
+
+      const pgpCardState = {
+	  isCardOpen,
+	  keyId: "",
+	  uids: [],
+	  subkeys: [],
+      }
+
+      const pgpCardRender = (state, updateState) => {
+	  return !state.isCardOpen.get()
+	      ? html()
+	      : html("div", {"class": "pgp card"}, [
+		  html("div", null, ["KeyID: " + state.keyId]),
+		  ...state.uids.map(uid => html("div", null, [`uid: ${uid.text}`])),
+		  ...state.subkeys.map(subkey => html("div", null, [`subkey: ${subkey.id} [${subkey.algo}]`]))
+	      ])
+      }
+
+      const pgpCard = reactive(window["pgp-card"], pgpCardRender, pgpCardState)
+      const togglePgpCard = () => {
+	  isCardOpen.set(!isCardOpen.get())
+	  pgpCard.updateState({ isCardOpen })
+      }
+      pgpHandle.updateState({ togglePgpCard })
+
+      const asc = await fetch("./s3i7h.asc").then(resp => resp.text())
+      const key = await openpgp.readKey({ armoredKey: asc })
+      const keyId = key.getKeyID().toHex().toUpperCase()
+      const uids = key.getUserIDs().map(user => ({
+	  text: user,
+      }))
+      const algorithmInfoToString = (info) => {
+	  let result = info.algorithm
+	  if (info.bits != null) result += ` ${info.bits}bit`
+	  if (info.curve != null) result += ` (${info.curve})`
+	  return result
+      }
+      const subkeys = key.subkeys.map(subkey => ({
+	  id: subkey.getKeyID().toHex().toUpperCase(),
+	  algo: algorithmInfoToString(subkey.getAlgorithmInfo())
+      }))
+      pgpHandle.updateState({ keyId })
+      pgpCard.updateState({ keyId, uids, subkeys })
+
+      window.exports = { key, html, reactive, useState, pgpHandle, pgpCard }
     </script>
 </body>
 </html>

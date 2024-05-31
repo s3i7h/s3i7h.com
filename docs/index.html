@@ -112,6 +112,12 @@
     <script type="module">
       import * as openpgp from "./openpgp.mjs"
 
+      let jump, anchor, jumpUrl
+      if ((jump = new URL(location.href).searchParams.get("jump"))
+	  && (anchor = window[`${jump}-link`])
+	  && (jumpUrl = anchor.href))
+	  location.replace(jumpUrl)
+
       // simple wrapper to create a DOM element on the fly
       // html("a", {href: "https://google.com"}, ["Google"])
       const html = (tag, attrs_, children_) => {
